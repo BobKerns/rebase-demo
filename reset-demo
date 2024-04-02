@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+
+# This script will restore the demonstration repository to its initial state.
+# With an argument of update, it will record the current state as the new initial
+# state.
+
+demos=(
+    "move/main move/feature1 move/patch1"
+)
+
+rebase_all() {
+    for demo in "${demos[@]}"; do
+        base=main
+        for d in $demo; do
+            if ! git rebase --strategy ours --onto "$base" "$base" "$d"; then
+                echo $?
+                PAGER='' git log -n 1 --oneline
+                echo "Rebase failed, please resolve conflicts."
+                echo "Exit this subshell to contiue."
+                $SHELL
+                git rebase --continue
+            fi
+            base="$d"
+        done
+    done
+    echo "Returning to main branch"
+    git switch main
+}
+
+translate() {
+    local from="$1"
+    local to="$2"
+    local base
+    while read -r ref; do
+        base="${ref#"$from"/}"
+        base="${base#"$to"/}"
+        tocommit=$(git rev-parse "$to/$base")
+        printf "update %s %s\n" "$from/$base" "$tocommit"1>&2
+        printf "update %s %s\n" "$from/$base" "$tocommit"
+    done
+}
+
+case "${1:-reset}" in
+reset)
+    git for-each-ref --format="%(refname)" refs/restore/ | translate refs/heads refs/restore | git update-ref --stdin
+    ;;
+update)
+    rebase_all
+    git for-each-ref --format="%(refname)" refs/heads/ | translate refs/restore refs/heads | git update-ref --stdin
+    echo "Update complete"
+    ;;
+push)
+    "$0" update
+    git push origin --force refs/heads/*:refs/heads/* refs/restore/*:refs/restore/*
+    ;;
+esac
